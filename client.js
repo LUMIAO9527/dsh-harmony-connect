@@ -124,7 +124,7 @@ window.__ModuleLoader__.load({
         [data-dhc-frame]>[data-rightbar-col] { position:absolute;inset:0;width:100%!important;height:100%;z-index:28;background:var(--dsw-alias-bg-base) }
         [data-dhc-frame][data-rightbar-collapsed]:not([data-rightbar-fullscreen])>[data-rightbar-col] { display:none }
         [data-dhc-frame][data-rightbar-fullscreen]>[data-rightbar-col] { display:block;inset:0;width:100%!important;z-index:35 }
-        [data-dhc-frame]>.dhc-nav-backdrop[data-open] { display:block;position:absolute;inset:0;z-index:27;border:0;padding:0;border-radius:0;background:rgba(0,0,0,.28);backdrop-filter:blur(2px);cursor:pointer;touch-action:manipulation }
+        [data-dhc-frame]>.dhc-nav-backdrop[data-open] { display:block;position:absolute;inset:0;z-index:27;border:0;padding:0;border-radius:0;background:rgba(0,0,0,.28);cursor:pointer;touch-action:manipulation }
         [data-dhc-frame] [data-shell-overlay] { z-index:40 }
         [data-dhc-frame] [data-dhc-chat-body] { padding-inline:12px!important;box-sizing:border-box;min-width:0 }
         [data-dhc-frame] [data-dhc-chat-scroll] { scrollbar-gutter:auto!important;margin-right:0!important;min-width:0 }
@@ -256,7 +256,7 @@ window.__ModuleLoader__.load({
         useEffect(()=>layout?.panelInfo.subscribe(()=>setPanel(layout.panelInfo.getSnapshot().activePanelId)),[]);
         if(visible) return null;
         return h('button',{className:'dhc-quick-nav','data-dhc-quick-nav':true,type:'button',
-          'aria-label':panel?'返回会话':'打开会话列表','aria-description':'长按打开连接控制',title:'长按打开连接控制',
+          'aria-label':panel?'返回会话':'打开会话列表',
           onClick:()=>{if(panel)layout.selectPanel(null);else layout?.toggleSidebar();}},
           panel?h(Icon,{name:'back'}):h(FishLogo,{size:25}));
       }
@@ -401,7 +401,7 @@ window.__ModuleLoader__.load({
       },'authenticated gateway connection');
       ctx.effect(()=>{
         const connection=ctx.get('connection');
-        if(!window.HarmonyConnector || !connection?.state) return;
+        if(!connection?.state) return;
         const publish=()=>{
           const state=connection.state.getSnapshot() || 'connecting';
           window.__DSH_HARMONY_STATE__=state;
@@ -434,7 +434,7 @@ window.__ModuleLoader__.load({
         const marked=new Set();
         const mark=(node,name)=>{if(node&&!node.hasAttribute(name)){node.setAttribute(name,'');marked.add([node,name]);}};
         const markContents=()=>{
-          if(!frame)return;
+          if(!frame||window.__DS_HARMONY_NATIVE_SHELL__)return;
           const header=frame.querySelector('[data-dhc-center] [data-phase] > [data-slot="conversation.header"] > header, [data-dhc-center] [data-phase] > header[data-window-drag]');
           mark(header,'data-dhc-chat-header');
           const nav=header?.querySelector('nav');
@@ -452,11 +452,21 @@ window.__ModuleLoader__.load({
           if(slot?.hasAttribute('data-slot'))mark(slot.parentElement,'data-dhc-composer-stack');
         };
         let contentsFrame=0;
-        const structural='[data-phase],[data-conversation-content],[data-composer-seat],[data-composer-card],[data-conversation-tabs],header[data-window-drag]';
+        const structural='[data-phase],[data-conversation-content],[data-conversation-scroll],[data-composer-seat],[data-composer-card],[data-conversation-tabs],header[data-window-drag],[class*="_titleRow"],[class*="_titleCluster"]';
         const contentsObserver=new MutationObserver(records=>{
-          const relevant=records.some(record=>record.target===frame || record.target.closest?.('[data-dhc-chat-header],[data-composer-seat]') || [...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches(structural)||node.querySelector(structural))));
+          if(window.__DS_HARMONY_NATIVE_SHELL__||document.hidden)return;
+          const relevant=records.some(record=>{
+            const content=record.target.closest?.('[data-chat-flow],[data-composer-card]');
+            return [...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&(node.matches(structural)||(!content&&node.querySelector(structural))));
+          });
           if(relevant&&!contentsFrame)contentsFrame=requestAnimationFrame(()=>{contentsFrame=0;markContents();});
         });
+        const syncOwner=()=>{
+          contentsObserver.disconnect();cancelAnimationFrame(contentsFrame);contentsFrame=0;
+          if(frame&&!window.__DS_HARMONY_NATIVE_SHELL__&&!document.hidden){contentsObserver.observe(frame,{childList:true,subtree:true});markContents();}
+        };
+        window.addEventListener('dsh-harmony:layout-owner',syncOwner);
+        document.addEventListener('visibilitychange',syncOwner);
         backdrop.addEventListener('click',closePanels);compact.addEventListener('change',syncPanels);
         let activePanel=layout?.panelInfo.getSnapshot().activePanelId;
         const stopPanel=layout?.panelInfo.subscribe(()=>{
@@ -492,15 +502,20 @@ window.__ModuleLoader__.load({
           frame=candidate;frame.dataset.dhcFrame='true';frame.children[0]?.setAttribute('data-dhc-sidebar','true');frame.children[1]?.setAttribute('data-dhc-center','true');
           if(compact.matches&&!frame.hasAttribute('data-sidebar-collapsed'))layout?.toggleSidebar();
           frame.append(backdrop);panelsObserver.observe(frame,{attributes:true,attributeFilter:['data-sidebar-collapsed','data-rightbar-collapsed']});syncPanels();
-          contentsObserver.observe(frame,{childList:true,subtree:true});markContents();
+          syncOwner();
           observer.disconnect();
         };
         const observer=new MutationObserver(markFrame);
         observer.observe(document.body,{childList:true,subtree:true});markFrame();
         const viewport=window.visualViewport;
-        const syncHeight=()=>document.documentElement.style.setProperty('--dhc-visible-height',(viewport?.height||window.innerHeight)+'px');
+        let visibleHeight=0;
+        const syncHeight=()=>{
+          if(window.__DS_HARMONY_NATIVE_SHELL__)return;
+          const height=viewport?.height||window.innerHeight;
+          if(height>0&&height!==visibleHeight){visibleHeight=height;document.documentElement.style.setProperty('--dhc-visible-height',height+'px');}
+        };
         syncHeight();viewport?.addEventListener('resize',syncHeight);window.addEventListener('resize',syncHeight);
-        return()=>{observer.disconnect();panelsObserver.disconnect();contentsObserver.disconnect();cancelAnimationFrame(contentsFrame);cancelAnimationFrame(navigationFrame);document.removeEventListener('click',navigationClick);for(const[node,name]of marked)node.removeAttribute(name);stopPanel?.();stopSession?.();backdrop.removeEventListener('click',closePanels);compact.removeEventListener('change',syncPanels);backdrop.remove();style.remove();delete document.documentElement.dataset.dhcEnabled;document.documentElement.removeAttribute('data-dhc-navigation-open');document.documentElement.style.removeProperty('--dhc-visible-height');frame?.removeAttribute('data-dhc-frame');frame?.removeAttribute('data-dhc-main-panel');frame?.children[0]?.removeAttribute('data-dhc-sidebar');frame?.children[1]?.removeAttribute('data-dhc-center');viewport?.removeEventListener('resize',syncHeight);window.removeEventListener('resize',syncHeight);};
+        return()=>{observer.disconnect();panelsObserver.disconnect();contentsObserver.disconnect();cancelAnimationFrame(contentsFrame);cancelAnimationFrame(navigationFrame);document.removeEventListener('click',navigationClick);document.removeEventListener('visibilitychange',syncOwner);window.removeEventListener('dsh-harmony:layout-owner',syncOwner);if(!window.__DS_HARMONY_NATIVE_SHELL__){for(const[node,name]of marked)node.removeAttribute(name);delete document.documentElement.dataset.dhcEnabled;frame?.removeAttribute('data-dhc-frame');frame?.children[0]?.removeAttribute('data-dhc-sidebar');frame?.children[1]?.removeAttribute('data-dhc-center');}stopPanel?.();stopSession?.();backdrop.removeEventListener('click',closePanels);compact.removeEventListener('change',syncPanels);backdrop.remove();style.remove();document.documentElement.removeAttribute('data-dhc-navigation-open');document.documentElement.style.removeProperty('--dhc-visible-height');frame?.removeAttribute('data-dhc-main-panel');viewport?.removeEventListener('resize',syncHeight);window.removeEventListener('resize',syncHeight);};
       },'harmony connection styles');
       ctx.effect(()=>{
         const back=()=>{
@@ -519,20 +534,6 @@ window.__ModuleLoader__.load({
       },'DSH system back navigation');
       ctx.effect(()=>ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'dsh-harmony-connect',order:35,label:'DS Harmony'},ConnectionSettings)),'DS Harmony connection settings');
       ctx.effect(()=>ctx.slots.inject('plugins.bundle.config',()=>ctx.slots.register({name:'plugins.bundle.config',key:'dsh-harmony-connect'},ConnectionSettings)),'harmony plugin connection settings');
-      ctx.effect(()=>{
-        let timer=0,start=null,suppressed=null,suppressedAt=0;
-        const control=target=>target instanceof Element?target.closest('[data-dhc-quick-nav],[data-dhc-sidebar] [data-window-drag] button'):null;
-        const cancel=()=>{clearTimeout(timer);timer=0;start=null;};
-        const down=event=>{if(event.button!==0)return;const target=control(event.target);if(!target)return;cancel();suppressed=null;start={x:event.clientX,y:event.clientY,target};timer=setTimeout(()=>{suppressed=target;suppressedAt=Date.now();cancel();requestShow();},560);};
-        const move=event=>{if(start&&Math.hypot(event.clientX-start.x,event.clientY-start.y)>10)cancel();};
-        const click=event=>{if(suppressed&&Date.now()-suppressedAt<1400&&suppressed.contains(event.target)){event.preventDefault();event.stopImmediatePropagation();suppressed=null;}};
-        const menu=event=>{const target=control(event.target);if(!target)return;event.preventDefault();cancel();if(suppressed!==target||Date.now()-suppressedAt>1400){suppressed=target;suppressedAt=Date.now();requestShow();}};
-        const key=event=>{if((event.key==='ContextMenu'||(event.key==='F10'&&event.shiftKey))&&control(event.target)){event.preventDefault();requestShow();}};
-        const visibility=()=>{if(document.hidden)cancel();};
-        document.addEventListener('pointerdown',down,true);document.addEventListener('pointermove',move,true);document.addEventListener('pointerup',cancel,true);document.addEventListener('pointercancel',cancel,true);document.addEventListener('click',click,true);document.addEventListener('contextmenu',menu,true);document.addEventListener('keydown',key,true);
-        document.addEventListener('visibilitychange',visibility);window.addEventListener('blur',cancel);
-        return()=>{cancel();document.removeEventListener('pointerdown',down,true);document.removeEventListener('pointermove',move,true);document.removeEventListener('pointerup',cancel,true);document.removeEventListener('pointercancel',cancel,true);document.removeEventListener('click',click,true);document.removeEventListener('contextmenu',menu,true);document.removeEventListener('keydown',key,true);document.removeEventListener('visibilitychange',visibility);window.removeEventListener('blur',cancel);};
-      },'harmony long press connection controls');
       ctx.effect(()=>{
         // DSH memoizes shell.overlay; an owned root keeps late loads and hot replacement interactive.
         const host=document.createElement('div');host.dataset.dhcOverlayHost='true';document.body.append(host);

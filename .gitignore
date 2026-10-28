@@ -1,0 +1,13 @@
+node_modules/
+_wip/
+state/
+logs/
+.env
+.env.*
+devices.json
+*.log
+*.tgz
+*.hap
+*.p12
+*.p7b
+*.key

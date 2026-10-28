@@ -54,7 +54,7 @@ export async function apply(ctx, config = {}) {
     handler: (request, response) => {
       if (ctx.connection.requestRejection(request) !== undefined) { response.writeHead(401); response.end(); return; }
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      response.end(JSON.stringify({ version: '0.2.1-preview.1', frontend: 'stock', origin: gateway.address().origin }));
+      response.end(JSON.stringify({ version: '0.2.4-preview.1', frontend: 'stock', origin: gateway.address().origin }));
     }
   }), 'harmony connector status');
   ctx.logger(name).info('Pairing gateway ready on loopback port %d; device lifetime 90 days.', gateway.address().port);
